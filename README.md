@@ -9,16 +9,18 @@ Verkabelung.
 
 ## Hardware
 
-- **MCU:** STM32F103C8 "Bluepill" (Chip meldet sich mit 128 KiB Flash statt der
-  nominellen 64 KiB - typisches Klon-Verhalten, kein Fehler)
+- **MCU:** STM32F103C8 "Bluepill"
 - **Display:** 1,8" SPI-TFT 128x160, rotes "V1.1"-Modul (ST7735S-Klon)
 - **Temperatursensor:** DS18B20 auf dem Kühlkörper
-- **Lüfter:** 4-Draht-PC-Lüfter, per MOSFET PWM-gesteuert (schaltet Rot/Schwarz statt über
-  den eigentlich dafür vorgesehenen Blau-Steuereingang)
-- **LED:** 100W-COB-LED per MOSFET PWM-gesteuert
-- **Bedienung:** Inkrementalgeber mit Taster
+- **Lüfter:** 4-Draht-PC-Lüfter, per MOSFET (IRF3708, 10kΩ Pull-down am Gate gegen GND)
+  PWM-gesteuert
+- **LED:** 100W-COB-LED, betrieben über eine externe Konstantstromquelle, deren Strom auf
+  die 100W-LED eingestellt sein muss - die Firmware misst selbst keine Leistung/keinen
+  Strom, sondern moduliert per MOSFET (IRF3708, 10kΩ Pull-down am Gate gegen GND) nur den
+  PWM-Duty-Cycle der Konstantstromquelle
+- **Bedienung:** Inkrementalgeber mit Taster (KY-040-artiges Modul)
 - **Stromversorgung:** Ferrex 20V/40V-Akkupack (im 20V/5S-Modus betrieben, ~15-21V),
-  Spannungsmessung über einstellbaren Spannungsteiler an einem ADC-Pin
+  Spannungsmessung über einstellbaren 10kΩ-Spannungsteiler an einem ADC-Pin
 
 ### Pinbelegung
 
@@ -30,10 +32,7 @@ Siehe [`src/config.h`](src/config.h) für die vollständige, kommentierte Zuordn
 - **Toolchain:** [PlatformIO](https://platformio.org/), `platform = ststm32`,
   `framework = arduino` (STM32duino)
 - **Display-Library:** [TFT_eSPI](https://github.com/Bodmer/TFT_eSPI), komplett über
-  `build_flags` in `platformio.ini` konfiguriert (nicht über `User_Setup.h`). Wichtig:
-  `Adafruit_ST7735` initialisiert diesen Display-Klon **nicht** (bleibt weiß) -
-  TFT_eSPI und `Arduino_GFX` funktionieren beide, TFT_eSPI ist aber deutlich
-  flashschonender.
+  `build_flags` in `platformio.ini` konfiguriert (nicht über `User_Setup.h`).
 - **Flashen:** über ST-Link (V2-Klon) via OpenOCD, `pio run -t upload`. Der Standard-
   `upload_protocol = stlink` funktioniert mit diesem Klon nicht (`hla_swd`-Transport
   wird nicht unterstützt) - `platformio.ini` nutzt daher einen custom OpenOCD-Aufruf mit
@@ -50,10 +49,8 @@ Siehe [`src/config.h`](src/config.h) für die vollständige, kommentierte Zuordn
   Tasterdruck weckt auf und schaltet die LED ein.
 - **Drehen:** stellt die Helligkeit in 40 Stufen (2,5% pro Klick) ein, unabhängig vom
   Turbo-Zustand.
-- Die Helligkeit wird **nicht** über einen Stromausfall hinweg gespeichert (siehe
-  `LED_DEFAULT_PERCENT` in `config.h`, Standard 35%) - der Spannungswandler zwischen
-  Akku und Board bricht bei Stromverlust zu abrupt weg, um einen zuverlässigen
-  EEPROM-Notspeichervorgang zu garantieren.
+- Die Helligkeit wird **nicht** über einen Stromausfall hinweg gespeichert - nach jedem
+  Neustart gilt `LED_DEFAULT_PERCENT` aus `config.h` (Standard 35%).
 
 ## Schutzfunktionen
 
@@ -84,10 +81,8 @@ Lineare Kurve zwischen 40°C (aus) und 65°C (100%), abhängig von der DS18B20-M
 dem Kühlkörper. Läuft nur, solange die LED eingeschaltet ist (auch bei hoher
 Umgebungstemperatur sonst aus) - vor dem Deep-Sleep wird die PWM zusätzlich explizit auf
 0 gesetzt, da der Timer im STOP-Modus sonst mitten im PWM-Zyklus einfrieren und hängen
-bleiben kann. Eine Drehzahlmessung über das Tacho-Signal des Lüfters wurde nach
-ausgiebigem Debugging aufgegeben - der Lüfter liefert vermutlich kein klassisches
-Puls-Tachosignal (ohne Oszilloskop nicht weiter eingrenzbar). Die Lüfteranzeige zeigt
-daher den kommandierten PWM-Duty-Cycle, keine gemessene Ist-Drehzahl.
+bleiben kann. Die Lüfteranzeige zeigt den kommandierten PWM-Duty-Cycle, keine gemessene
+Ist-Drehzahl.
 
 ## Display
 
