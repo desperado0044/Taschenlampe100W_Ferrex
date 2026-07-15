@@ -5,6 +5,7 @@
 
 #include "temperature.h"
 #include "config.h"
+#include "settings.h"
 
 namespace {
 
@@ -55,14 +56,15 @@ uint8_t temperatureGetLedCeilingPercent() {
     if (isnan(heatsinkTempC)) {
         return 0;
     }
-    if (heatsinkTempC <= LED_THROTTLE_START_C) {
+    float start = settingsGetLedThrottleStartC();
+    float zero = settingsGetLedThrottleZeroC();
+    if (heatsinkTempC <= start) {
         return 100;
     }
-    if (heatsinkTempC >= LED_THROTTLE_ZERO_C) {
+    if (heatsinkTempC >= zero) {
         return 0;
     }
 
-    float fraction = (heatsinkTempC - LED_THROTTLE_START_C) /
-                      (LED_THROTTLE_ZERO_C - LED_THROTTLE_START_C);
+    float fraction = (heatsinkTempC - start) / (zero - start);
     return (uint8_t)roundf((1.0f - fraction) * 100.0f);
 }

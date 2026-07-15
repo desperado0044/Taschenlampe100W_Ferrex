@@ -3,6 +3,7 @@
 
 #include "battery.h"
 #include "config.h"
+#include "settings.h"
 
 namespace {
 
@@ -45,7 +46,7 @@ void batteryUpdate() {
 
     float adcRaw = (float)adcSum / adcSamples;
     float pinVoltage = adcRaw * 3.3f / 4095.0f;
-    float voltage = pinVoltage * BATTERY_VOLTAGE_DIVIDER_RATIO;
+    float voltage = pinVoltage * settingsGetAdcDividerRatio();
 
     // Zusätzlich über die Update-Zyklen hinweg glätten (gleitender Mittelwert) - der Akku
     // (100Wh) ändert seine Spannung ohnehin nur langsam, schnelle Reaktion ist hier nicht
@@ -76,15 +77,16 @@ uint8_t batteryGetLedCeilingPercent() {
     if (isnan(voltageSmoothed)) {
         return 0;
     }
-    if (voltageSmoothed >= BATTERY_LED_RAMP_START_VOLTAGE) {
+    float rampStart = settingsGetBatteryRampStartVoltage();
+    float cutoff = settingsGetBatteryCutoffVoltage();
+    if (voltageSmoothed >= rampStart) {
         return 100;
     }
-    if (voltageSmoothed <= BATTERY_CUTOFF_VOLTAGE) {
+    if (voltageSmoothed <= cutoff) {
         return 0;
     }
 
-    float fraction = (voltageSmoothed - BATTERY_CUTOFF_VOLTAGE) /
-                      (BATTERY_LED_RAMP_START_VOLTAGE - BATTERY_CUTOFF_VOLTAGE);
+    float fraction = (voltageSmoothed - cutoff) / (rampStart - cutoff);
     return (uint8_t)roundf(fraction * 100.0f);
 }
 
@@ -92,8 +94,9 @@ uint8_t batteryGetChargePercent() {
     if (isnan(voltageSmoothed)) {
         return 0;
     }
-    float percent = (voltageSmoothed - BATTERY_CUTOFF_VOLTAGE) /
-                     (BATTERY_FULL_VOLTAGE - BATTERY_CUTOFF_VOLTAGE) * 100.0f;
+    float percent = (voltageSmoothed - settingsGetBatteryCutoffVoltage()) /
+                     (settingsGetBatteryFullVoltage() - settingsGetBatteryCutoffVoltage()) *
+                     100.0f;
     percent = constrain(percent, 0.0f, 100.0f);
     return (uint8_t)roundf(percent);
 }

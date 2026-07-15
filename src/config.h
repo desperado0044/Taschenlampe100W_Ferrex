@@ -45,6 +45,14 @@
 // noch über die LED-Leistung selbst gebremst), bis bei LED_THROTTLE_ZERO_C nichts mehr übrig
 // bleibt. Wirkt als Obergrenze auf die eingestellte Helligkeit, hebt sie nie an - kein harter
 // Schwellwert/Hysterese nötig, die Rampe selbst verhindert Flattern.
+//
+// Der DS18B20 sitzt auf dem Kühlkörper, nicht am LED-Die - zwischen Sperrschicht (Junction)
+// und Kühlkörper liegt ein unbekannter, ggf. beträchtlicher Temperaturgradient (abhängig von
+// Wärmewiderstand des LED-Packages und Qualität der Wärmeleitpaste/-pads). 80°C ist daher eine
+// konservative Vorgabe ohne Datenblattbezug. Der Konfigurationsbildschirm (siehe menu.cpp)
+// erlaubt bis 100°C - wer das eigene LED-Datenblatt (max. Junction-Temperatur,
+// Wärmewiderstand) kennt oder den realen Gap zur Junction gemessen hat, kann dort begründet
+// höher gehen.
 #define LED_THROTTLE_START_C 65.0f
 #define LED_THROTTLE_ZERO_C 80.0f
 
@@ -92,12 +100,14 @@
 #define PIN_ENC_DT  PA1
 #define PIN_ENC_SW  PA3
 #define ENCODER_BUTTON_DEBOUNCE_MS 30
-// Ab dieser Haltedauer zählt ein Tastendruck als "lang" (Aus/Deep-Sleep) statt "kurz"
-// (Ein/Turbo-Toggle).
-#define ENCODER_LONG_PRESS_MS 600
+// Ab dieser Haltedauer zählt ein Tastendruck als "lang" - öffnet/verlässt den
+// Konfigurationsbildschirm (siehe menu.cpp), statt Deep-Sleep wie in einer früheren Version.
+#define ENCODER_LONG_PRESS_MS 1000
 
-// Fester Startwert statt EEPROM-Persistenz: Der Spannungswandler zwischen Akku und Board hält
-// die Spannung bei Stromverlust lange und bricht dann abrupt weg - zu wenig Vorwarnzeit für
-// einen zuverlässigen Notspeichervorgang. Nach jedem Neustart (Akku angeschlossen) gilt daher
-// immer dieser Wert als Helligkeit, bis der Nutzer per Encoder nachjustiert.
+// Alle Werte unten sind zugleich die Fallback-Vorgaben für settings.cpp, falls im EEPROM noch
+// kein gültiger Wert steht (frisch geflashtes Board) - über den Konfigurationsbildschirm
+// (langer Druck, siehe menu.cpp) sind sie zur Laufzeit einstellbar und übersteht - anders als
+// die Live-Helligkeit während des Betriebs - einen Stromausfall, da nur bei bewusster
+// Bestätigung im Menü geschrieben wird (kein Wettlauf gegen einen Spannungseinbruch wie bei
+// der früher verworfenen automatischen Notspeicherung).
 #define LED_DEFAULT_PERCENT 35
