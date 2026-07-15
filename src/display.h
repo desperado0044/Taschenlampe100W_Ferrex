@@ -20,3 +20,22 @@ void displayShowLed(uint8_t percent, float watts);
 
 // Zeigt Lüfter-PWM-Duty-Cycle + Meter.
 void displayShowFan(uint8_t percent);
+
+// Löscht den Bildschirm - bei jedem Wechsel zwischen Hauptanzeige, Menüliste und
+// Werte-Bearbeitung aufrufen (unterschiedliches Layout, sonst blieben alte Pixel stehen).
+void displayClear();
+
+// Zeigt ein Fenster von Konfigurationspunkten (siehe MENU_VISIBLE_ROWS), der aktuell
+// ausgewählte ist markiert (">", gelb) - names/count/selectedIndex beziehen sich auf das
+// sichtbare Fenster, nicht auf die Gesamtliste. hasMoreAbove/hasMoreBelow blenden einen
+// kleinen Scroll-Pfeil ein, falls die Liste über das Fenster hinausgeht.
+const uint8_t MENU_VISIBLE_ROWS = 8;
+void displayShowMenuList(const char* const* names, uint8_t count, uint8_t selectedIndex,
+                          bool hasMoreAbove, bool hasMoreBelow);
+
+// Zeigt den gerade bearbeiteten Konfigurationspunkt: Name, Wert + Einheit. previewVoltage:
+// zusätzliche Zeile mit einer Live-Vorschau (z.B. Akkuspannung beim ADC-Korrekturfaktor) -
+// NAN, falls für diesen Punkt nicht zutreffend. warning: Wert + Zusatzzeile rot, mit Verweis
+// auf die README - für Werte oberhalb einer konservativen, datenblattfreien Vorgabe.
+void displayShowMenuEdit(const char* itemName, float value, const char* unit,
+                          float previewVoltage, bool warning);

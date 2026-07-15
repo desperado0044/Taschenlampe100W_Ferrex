@@ -135,26 +135,3 @@ bool encoderConsumeLongPress() {
     }
     return false;
 }
-
-void encoderResync() {
-    // Nach dem Aufwachen aus dem STOP-Modus: TIM2-Zählerbasis und Taster-Entprellung neu
-    // referenzieren, statt einen möglicherweise verzerrten/veralteten Vergleich gegen den
-    // Stand von vor dem Schlafen zu machen (millis() lief während der Takt-Umschaltung kurz
-    // nicht sauber, das hätte sonst einen Fehl-Delta bzw. eine hängende Entprellung ergeben
-    // können).
-    lastCounter = (int16_t)__HAL_TIM_GET_COUNTER(&timHandle);
-    stepRemainder = 0;
-
-    isrRawState = digitalRead(PIN_ENC_SW);
-    isrChangeMs = millis();
-    debouncedPressed = (isrRawState == LOW);
-    pressStartMs = millis();
-    // Falls der Taster hier noch physisch gehalten wird, ist das derselbe Druck, der die MCU
-    // gerade geweckt hat - main.cpp hat ihn bereits synthetisch als kurzen Druck verarbeitet
-    // (LED an). longPressFired vorbelegen unterdrückt, dass das gleich folgende Loslassen
-    // zusätzlich als eigener kurzer Druck gezählt wird (hätte sonst z.B. sofort ungewollt in
-    // den Turbo-Modus umgeschaltet).
-    longPressFired = debouncedPressed;
-    shortPressPending = false;
-    longPressPending = false;
-}

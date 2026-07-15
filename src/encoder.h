@@ -18,8 +18,3 @@ bool encoderConsumeShortPress();
 // True für genau einen Aufruf, sobald ein langer Tastendruck die Schwelle erreicht (sofort,
 // nicht erst beim Loslassen).
 bool encoderConsumeLongPress();
-
-// Nach dem Aufwachen aus dem Deep-Sleep aufrufen: referenziert Encoder-Zählerbasis und
-// Taster-Entprellung neu, statt gegen einen durch die Schlafphase verzerrten/veralteten
-// Stand zu vergleichen.
-void encoderResync();

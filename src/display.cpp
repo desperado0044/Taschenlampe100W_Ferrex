@@ -4,6 +4,7 @@
 
 #include "display.h"
 #include "config.h"
+#include "settings.h"
 
 namespace {
 
@@ -90,8 +91,8 @@ void displayShowBattery(float voltage, uint8_t chargePercent, bool throttleActiv
 void displayShowTemperature(float tempC, bool throttleActive) {
     uint8_t meterPercent = 0;
     if (!isnan(tempC)) {
-        float fraction =
-            (tempC - TEMP_METER_MIN_C) / (LED_THROTTLE_ZERO_C - TEMP_METER_MIN_C) * 100.0f;
+        float fraction = (tempC - TEMP_METER_MIN_C) /
+                          (settingsGetLedThrottleZeroC() - TEMP_METER_MIN_C) * 100.0f;
         meterPercent = (uint8_t)constrain(fraction, 0.0f, 100.0f);
     }
     uint16_t color = gradientColor(meterPercent, false);
@@ -138,5 +139,88 @@ void displayShowFan(uint8_t percent) {
     tft.print(line);
 
     drawMeter(114, percent);
+}
+
+void displayClear() {
+    tft.fillScreen(TFT_BLACK);
+}
+
+void displayShowMenuList(const char* const* names, uint8_t count, uint8_t selectedIndex,
+                          bool hasMoreAbove, bool hasMoreBelow) {
+    // Kleinere Textgröße nur für die Liste, damit ein Fenster von Punkten auf einen Blick
+    // passt - am Ende wieder auf die im übrigen Programm erwartete Größe zurückstellen.
+    tft.setTextSize(1);
+
+    tft.setCursor(0, 0);
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.print("Konfiguration");
+
+    // Scroll-Pfeile in einer eigenen Spalte rechts, deutlich farbig statt als unauffälliges
+    // Präfix im Fließtext - zeigen an, ob die Liste über das sichtbare Fenster hinausgeht.
+    tft.setCursor(152, 0);
+    tft.setTextColor(hasMoreAbove ? TFT_YELLOW : TFT_BLACK, TFT_BLACK);
+    tft.print("^");
+
+    for (uint8_t i = 0; i < MENU_VISIBLE_ROWS; i++) {
+        tft.setCursor(0, 14 + i * 12);
+        if (i >= count) {
+            // Fenster ist kleiner als MENU_VISIBLE_ROWS (z.B. am Ende der Liste) - Reste
+            // eines vorherigen, längeren Fensters überschreiben.
+            tft.setTextColor(COLOR_NEUTRAL, TFT_BLACK);
+            tft.print("                    ");
+            continue;
+        }
+        bool selected = (i == selectedIndex);
+        tft.setTextColor(selected ? TFT_YELLOW : COLOR_NEUTRAL, TFT_BLACK);
+        char line[20];
+        snprintf(line, sizeof(line), "%c %-16s", selected ? '>' : ' ', names[i]);
+        tft.print(line);
+    }
+
+    tft.setCursor(152, 14 + MENU_VISIBLE_ROWS * 12);
+    tft.setTextColor(hasMoreBelow ? TFT_YELLOW : TFT_BLACK, TFT_BLACK);
+    tft.print("v");
+
+    tft.setTextSize(2);
+}
+
+void displayShowMenuEdit(const char* itemName, float value, const char* unit,
+                          float previewVoltage, bool warning) {
+    tft.setCursor(0, 0);
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.print("Bearbeiten");
+
+    // Kleinere Textgröße für den Namen - manche Punktnamen (z.B. "Grundhelligkeit") passen bei
+    // Textgröße 2 nicht auf den Bildschirm.
+    tft.setTextSize(1);
+    tft.setCursor(0, 24);
+    tft.setTextColor(COLOR_NEUTRAL, TFT_BLACK);
+    char nameLine[20];
+    snprintf(nameLine, sizeof(nameLine), "%-20s", itemName);
+    tft.print(nameLine);
+    tft.setTextSize(2);
+
+    tft.setCursor(0, 64);
+    tft.setTextColor(warning ? TFT_RED : TFT_YELLOW, TFT_BLACK);
+    char valueLine[16];
+    snprintf(valueLine, sizeof(valueLine), "%7.2f%-2s  ", value, unit);
+    tft.print(valueLine);
+
+    // Untere Infozeile - je nach Punkt entweder die Live-Vorschau, ein Warnhinweis, oder leer.
+    // Kleinere Textgröße, damit der Warnhinweis lesbar Platz hat.
+    tft.setTextSize(1);
+    tft.setCursor(0, 100);
+    char lowerLine[28];
+    if (warning) {
+        tft.setTextColor(TFT_RED, TFT_BLACK);
+        snprintf(lowerLine, sizeof(lowerLine), "Kritisch! Siehe README    ");
+    } else if (!isnan(previewVoltage)) {
+        tft.setTextColor(COLOR_LABEL, TFT_BLACK);
+        snprintf(lowerLine, sizeof(lowerLine), "-> %.3fV berechnet      ", previewVoltage);
+    } else {
+        snprintf(lowerLine, sizeof(lowerLine), "                        ");
+    }
+    tft.print(lowerLine);
+    tft.setTextSize(2);
 }
 

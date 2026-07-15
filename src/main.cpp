@@ -7,29 +7,10 @@
 #include "led.h"
 #include "fan.h"
 #include "display.h"
-#include "power.h"
+#include "settings.h"
+#include "menu.h"
 
 #define PIN_LED_ONBOARD PC13
-
-namespace {
-
-// Gemeinsame Aufwach-Sequenz nach powerEnterDeepSleep() - sowohl beim regulären Einschlafen
-// (langer Druck im laufenden Betrieb) als auch direkt nach dem Booten (siehe setup()): Encoder-
-// /Taster-Basis neu referenzieren (siehe encoderResync()), dann den weckenden Druck direkt als
-// "kurzer Druck" werten (LED an) - der wirkt durch die Neu-Referenzierung sonst verloren,
-// obwohl er ja gerade erst geweckt hat.
-void sleepThenWakeOn() {
-    // Lüfter explizit auf 0 vor dem Schlafen - sonst friert der Timer im STOP-Modus mitten im
-    // PWM-Zyklus ein und kann auf "high" hängen bleiben (siehe fan.h). Die LED ist an dieser
-    // Stelle bereits auf 0 (siehe Aufrufer), Kühlung wird beim Schlafen ohnehin nicht gebraucht.
-    fanStop();
-
-    powerEnterDeepSleep();
-    encoderResync();
-    ledUpdate(0, true, false, batteryGetLedCeilingPercent(), temperatureGetLedCeilingPercent());
-}
-
-}  // namespace
 
 void setup() {
     pinMode(PIN_LED_ONBOARD, OUTPUT);
@@ -44,16 +25,10 @@ void setup() {
     batteryInit();
     temperatureInit();
     encoderInit();
+    settingsInit();  // vor ledInit() - ledInit() liest den Startwert von dort.
     ledInit();
     fanInit();
-
-    // Direkt nach dem Booten in den Schlaf, statt die LED sofort mit LED_DEFAULT_PERCENT
-    // einzuschalten: Der Spannungswandler zwischen Akku und Board hält die Spannung bei
-    // Stromverlust lange und bricht dann abrupt weg - zu wenig Vorwarnzeit für einen
-    // zuverlässigen EEPROM-Notspeichervorgang, daher bewusst kein Versuch, die Helligkeit über
-    // Stromverlust hinweg zu retten (siehe LED_DEFAULT_PERCENT in config.h). Der erste
-    // Tasterdruck weckt auf und schaltet die LED mit dem Startwert ein.
-    sleepThenWakeOn();
+    menuInit();
 }
 
 void loop() {
@@ -71,36 +46,38 @@ void loop() {
     batteryUpdate();
     temperatureUpdate();
 
-    // Nur einmal pro Loop konsumieren - der Rückgabewert wird sowohl an ledUpdate() als auch
-    // an die Debug-Anzeige weitergereicht, ein zweiter Consume-Aufruf würde das Ereignis vor
-    // dem jeweils anderen Verbraucher verschlucken.
     encoderIsButtonPressed();
     bool shortPress = encoderConsumeShortPress();
     bool longPress = encoderConsumeLongPress();
+    int32_t encoderDelta = encoderReadDelta();
 
-    ledUpdate(encoderReadDelta(), shortPress, longPress, batteryGetLedCeilingPercent(),
-              temperatureGetLedCeilingPercent());
-
-    // Nach ledUpdate() aufrufen, damit ledIsEnabled() den aktuellen (nicht den vom letzten
-    // Durchlauf) Zustand widerspiegelt.
-    fanUpdate(temperatureGetHeatsinkC(), ledIsEnabled());
-
-    if (longPress) {
-        // ledUpdate() hat die LED oben schon auf 0 gesetzt - Anzeige einmal aktualisieren,
-        // bevor der Takt für den Schlaf heruntergefahren wird, dann schlafen.
-        displayShowLed(ledGetPercent(), ledGetWatts());
-
-        // Warten, bis der Taster wirklich losgelassen (entprellt) ist - sonst könnte eine
-        // Prell-Flanke beim Loslassen die MCU sofort wieder aufwecken.
-        while (encoderIsButtonPressed()) {
-        }
-
-        sleepThenWakeOn();
+    static UiMode previousMode = UiMode::Main;
+    UiMode mode = menuUpdate(encoderDelta, shortPress, longPress);
+    if (mode != previousMode) {
+        // Jeder Moduswechsel (Haupt/Menüliste/Bearbeiten) hat ein anderes Layout, alte Pixel
+        // blieben sonst stehen.
+        displayClear();
     }
+    previousMode = mode;
 
-    displayShowBattery(batteryGetVoltageSmoothed(), batteryGetChargePercent(),
-                        batteryGetLedCeilingPercent() < 100);
-    displayShowTemperature(temperatureGetHeatsinkC(), temperatureGetLedCeilingPercent() < 100);
-    displayShowLed(ledGetPercent(), ledGetWatts());
-    displayShowFan(fanGetPercent());
+    // Encoder/Taster nur im Main-Modus an die LED weiterreichen - im Menü steuern sie die
+    // Punkteauswahl bzw. den bearbeiteten Wert (siehe menuUpdate()), die Helligkeit bleibt
+    // währenddessen unverändert stehen.
+    bool ledActive = (mode == UiMode::Main);
+    ledUpdate(ledActive ? encoderDelta : 0, ledActive && shortPress,
+              batteryGetLedCeilingPercent(), temperatureGetLedCeilingPercent());
+
+    // Nach ledUpdate() aufrufen, damit ledGetPercent() den aktuellen (nicht den vom letzten
+    // Durchlauf) Zustand widerspiegelt.
+    fanUpdate(temperatureGetHeatsinkC(), ledGetPercent() > 0);
+
+    if (mode == UiMode::Main) {
+        displayShowBattery(batteryGetVoltageSmoothed(), batteryGetChargePercent(),
+                            batteryGetLedCeilingPercent() < 100);
+        displayShowTemperature(temperatureGetHeatsinkC(), temperatureGetLedCeilingPercent() < 100);
+        displayShowLed(ledGetPercent(), ledGetWatts());
+        displayShowFan(fanGetPercent());
+    } else {
+        menuShow();
+    }
 }

@@ -3,15 +3,17 @@
 
 #include "led.h"
 #include "config.h"
+#include "settings.h"
 
 namespace {
 
-bool ledEnabled = false;
 bool turboActive = false;  // true = 100% statt desiredPercent, siehe ledUpdate()
 // In Zehntel-Prozent geführt (0-1000), damit 40 Stufen exakt 2,5% pro Klick ergeben - mit
 // einem uint8_t-Prozentwert (Schrittweite 5) ließen sich 40 Stufen sonst nicht rundungsfrei
-// abbilden (100/40 = 2,5, keine Ganzzahl).
-int32_t desiredPercentTenths = (int32_t)LED_DEFAULT_PERCENT * 10;
+// abbilden (100/40 = 2,5, keine Ganzzahl). Startwert wird erst in ledInit() gesetzt (siehe
+// dort) - settingsInit() muss vorher gelaufen sein, ein statischer Initializer mit
+// settingsGetDefaultBrightness() wäre zu früh dran.
+int32_t desiredPercentTenths = 0;
 uint8_t actualPercent = 0;  // tatsächlich ausgegebene Helligkeit in % (nach Akku-/Temp-Deckel)
 uint8_t actualPwm = 0;  // tatsächlicher PWM-Duty-Cycle (0-255) - Basis für ledGetWatts()
 
@@ -65,23 +67,14 @@ uint8_t pwmToPercent(uint8_t pwm) {
 void ledInit() {
     pinMode(PIN_LED_PWM, OUTPUT);
     analogWrite(PIN_LED_PWM, 0);
+
+    desiredPercentTenths = (int32_t)roundf(settingsGetDefaultBrightness() * 10.0f);
 }
 
-void ledUpdate(int32_t encoderDelta, bool shortPress, bool longPress,
-               uint8_t batteryCeilingPercent, uint8_t overtempCeilingPercent) {
+void ledUpdate(int32_t encoderDelta, bool shortPress, uint8_t batteryCeilingPercent,
+               uint8_t overtempCeilingPercent) {
     if (shortPress) {
-        if (ledEnabled) {
-            // Bereits an: kurzer Druck schaltet zwischen normaler Helligkeit und Turbo (100%)
-            // um, statt die LED auszuschalten.
-            turboActive = !turboActive;
-        } else {
-            ledEnabled = true;
-            turboActive = false;
-        }
-    }
-    if (longPress) {
-        ledEnabled = false;
-        turboActive = false;
+        turboActive = !turboActive;
     }
 
     if (encoderDelta != 0) {
@@ -91,7 +84,7 @@ void ledUpdate(int32_t encoderDelta, bool shortPress, bool longPress,
 
     uint8_t desiredPercent = (uint8_t)((desiredPercentTenths + 5) / 10);  // auf ganze % runden
     uint8_t targetPercent = turboActive ? TURBO_PERCENT : desiredPercent;
-    uint8_t requestedPwm = ledEnabled ? percentToPwm(targetPercent) : 0;
+    uint8_t requestedPwm = percentToPwm(targetPercent);
 
     // Akku-/Temperatur-Obergrenzen auf die tatsächliche PWM-Leistung anwenden (linear zum
     // LED-Strom), nicht auf den wahrnehmungskorrigierten Prozentwert - hier geht es um
@@ -111,9 +104,5 @@ uint8_t ledGetPercent() {
 }
 
 float ledGetWatts() {
-    return (float)actualPwm / 255.0f * LED_RATED_WATTS;
-}
-
-bool ledIsEnabled() {
-    return ledEnabled;
+    return (float)actualPwm / 255.0f * settingsGetLedRatedWatts();
 }

@@ -3,6 +3,7 @@
 
 #include "fan.h"
 #include "config.h"
+#include "settings.h"
 
 namespace {
 
@@ -23,14 +24,17 @@ void fanUpdate(float heatsinkTempC, bool ledOn) {
         // Sensor liefert keinen gültigen Wert - im Zweifel lieber kühlen als riskieren, dass
         // die LED unbemerkt überhitzt.
         percent = 100;
-    } else if (heatsinkTempC <= FAN_CURVE_MIN_TEMP_C) {
-        percent = 0;
-    } else if (heatsinkTempC >= FAN_CURVE_MAX_TEMP_C) {
-        percent = 100;
     } else {
-        float fraction = (heatsinkTempC - FAN_CURVE_MIN_TEMP_C) /
-                          (FAN_CURVE_MAX_TEMP_C - FAN_CURVE_MIN_TEMP_C);
-        percent = (uint8_t)roundf(fraction * 100.0f);
+        float onTemp = settingsGetFanOnTempC();
+        float fullTemp = settingsGetFanFullTempC();
+        if (heatsinkTempC <= onTemp) {
+            percent = 0;
+        } else if (heatsinkTempC >= fullTemp) {
+            percent = 100;
+        } else {
+            float fraction = (heatsinkTempC - onTemp) / (fullTemp - onTemp);
+            percent = (uint8_t)roundf(fraction * 100.0f);
+        }
     }
 
     analogWrite(PIN_FAN_PWM, (uint16_t)percent * 255 / 100);
@@ -38,9 +42,4 @@ void fanUpdate(float heatsinkTempC, bool ledOn) {
 
 uint8_t fanGetPercent() {
     return percent;
-}
-
-void fanStop() {
-    percent = 0;
-    analogWrite(PIN_FAN_PWM, 0);
 }
