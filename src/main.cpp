@@ -1,107 +1,106 @@
 #include <Arduino.h>
-#include <TFT_eSPI.h>
 
 #include "config.h"
-
-TFT_eSPI tft = TFT_eSPI();
+#include "battery.h"
+#include "temperature.h"
+#include "encoder.h"
+#include "led.h"
+#include "fan.h"
+#include "display.h"
+#include "power.h"
 
 #define PIN_LED_ONBOARD PC13
 
-void setup() {
-    Serial.begin(115200);
+namespace {
 
+// Gemeinsame Aufwach-Sequenz nach powerEnterDeepSleep() - sowohl beim regulären Einschlafen
+// (langer Druck im laufenden Betrieb) als auch direkt nach dem Booten (siehe setup()): Encoder-
+// /Taster-Basis neu referenzieren (siehe encoderResync()), dann den weckenden Druck direkt als
+// "kurzer Druck" werten (LED an) - der wirkt durch die Neu-Referenzierung sonst verloren,
+// obwohl er ja gerade erst geweckt hat.
+void sleepThenWakeOn() {
+    // Lüfter explizit auf 0 vor dem Schlafen - sonst friert der Timer im STOP-Modus mitten im
+    // PWM-Zyklus ein und kann auf "high" hängen bleiben (siehe fan.h). Die LED ist an dieser
+    // Stelle bereits auf 0 (siehe Aufrufer), Kühlung wird beim Schlafen ohnehin nicht gebraucht.
+    fanStop();
+
+    powerEnterDeepSleep();
+    encoderResync();
+    ledUpdate(0, true, false, batteryGetLedCeilingPercent(), temperatureGetLedCeilingPercent());
+}
+
+}  // namespace
+
+void setup() {
     pinMode(PIN_LED_ONBOARD, OUTPUT);
 
-    pinMode(TFT_BL, OUTPUT);
-    digitalWrite(TFT_BL, HIGH);
+    // Über den Hörbereich hinaus (Default 1000Hz war als hörbares Fiepen wahrnehmbar). Muss
+    // vor dem ersten analogWrite() auf PIN_FAN_PWM/PIN_LED_PWM gesetzt werden - beide teilen
+    // sich TIM1, gilt also automatisch für beide. Der LED-MOSFET sitzt mit auf dem Kühlkörper
+    // (verkraftet die höheren Schaltverluste bei 50kHz).
+    analogWriteFrequency(50000);
 
-    tft.init();
-    tft.setRotation(1);
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextSize(2);
-    // Deckender Textfarben-Hintergrund: jedes Zeichen überschreibt den alten Inhalt beim
-    // Zeichnen direkt, kein separates fillScreen()+Neuzeichnen nötig -> kein Flackern.
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    displayInit();
+    batteryInit();
+    temperatureInit();
+    encoderInit();
+    ledInit();
+    fanInit();
 
-    analogReadResolution(12);
-    pinMode(PIN_BATTERY_ADC, INPUT_ANALOG);
-
-    pinMode(PIN_FAN_PWM, OUTPUT);
-    pinMode(PIN_LED_PWM, OUTPUT);
-    analogWrite(PIN_LED_PWM, 0);
+    // Direkt nach dem Booten in den Schlaf, statt die LED sofort mit LED_DEFAULT_PERCENT
+    // einzuschalten: Der Spannungswandler zwischen Akku und Board hält die Spannung bei
+    // Stromverlust lange und bricht dann abrupt weg - zu wenig Vorwarnzeit für einen
+    // zuverlässigen EEPROM-Notspeichervorgang, daher bewusst kein Versuch, die Helligkeit über
+    // Stromverlust hinweg zu retten (siehe LED_DEFAULT_PERCENT in config.h). Der erste
+    // Tasterdruck weckt auf und schaltet die LED mit dem Startwert ein.
+    sleepThenWakeOn();
 }
 
 void loop() {
-    digitalWrite(PIN_LED_ONBOARD, HIGH);
-    delay(300);
-    digitalWrite(PIN_LED_ONBOARD, LOW);
-    delay(300);
-
-    // Mehrere Samples mitteln statt Einzelmessung, um ADC-Rauschen der hochohmigen
-    // Spannungsteiler-Quelle wegzumitteln.
-    uint32_t adcSum = 0;
-    const uint8_t adcSamples = 16;
-    for (uint8_t i = 0; i < adcSamples; i++) {
-        adcSum += analogRead(PIN_BATTERY_ADC);
-    }
-    float adcRaw = (float)adcSum / adcSamples;
-    float pinVoltage = adcRaw * 3.3f / 4095.0f;
-    float batteryVoltage = pinVoltage * BATTERY_VOLTAGE_DIVIDER_RATIO;
-
-    // Zusätzlich über die Update-Zyklen hinweg glätten (EMA) - der Akku (100Wh) ändert seine
-    // Spannung ohnehin nur langsam, schnelle Reaktion ist hier nicht nötig.
-    static float batteryVoltageSmoothed = NAN;
-    const float emaAlpha = 0.1f;
-    if (isnan(batteryVoltageSmoothed)) {
-        batteryVoltageSmoothed = batteryVoltage;
-    } else {
-        batteryVoltageSmoothed += emaAlpha * (batteryVoltage - batteryVoltageSmoothed);
+    // Nicht-blockierendes Blinken statt delay() - jede Blockierung im Loop verzögert direkt
+    // die Taster-/Encoder-Reaktion, da deren Abfrage denselben Durchlauf teilt.
+    static unsigned long lastBlinkMs = 0;
+    static bool blinkState = false;
+    unsigned long now = millis();
+    if (now - lastBlinkMs >= 300) {
+        blinkState = !blinkState;
+        digitalWrite(PIN_LED_ONBOARD, blinkState);
+        lastBlinkMs = now;
     }
 
-    // Notabschaltung bei Unterspannung - einzige Schutzschicht, da der Akku selbst keinen
-    // Zell-Cutoff hat. Hysterese verhindert Flattern nahe der Schwelle.
-    static bool batteryUndervoltageLockout = false;
-    if (!batteryUndervoltageLockout && batteryVoltageSmoothed < BATTERY_CUTOFF_VOLTAGE) {
-        batteryUndervoltageLockout = true;
-    } else if (batteryUndervoltageLockout && batteryVoltageSmoothed > BATTERY_CUTOFF_RECOVER_VOLTAGE) {
-        batteryUndervoltageLockout = false;
+    batteryUpdate();
+    temperatureUpdate();
+
+    // Nur einmal pro Loop konsumieren - der Rückgabewert wird sowohl an ledUpdate() als auch
+    // an die Debug-Anzeige weitergereicht, ein zweiter Consume-Aufruf würde das Ereignis vor
+    // dem jeweils anderen Verbraucher verschlucken.
+    encoderIsButtonPressed();
+    bool shortPress = encoderConsumeShortPress();
+    bool longPress = encoderConsumeLongPress();
+
+    ledUpdate(encoderReadDelta(), shortPress, longPress, batteryGetLedCeilingPercent(),
+              temperatureGetLedCeilingPercent());
+
+    // Nach ledUpdate() aufrufen, damit ledIsEnabled() den aktuellen (nicht den vom letzten
+    // Durchlauf) Zustand widerspiegelt.
+    fanUpdate(temperatureGetHeatsinkC(), ledIsEnabled());
+
+    if (longPress) {
+        // ledUpdate() hat die LED oben schon auf 0 gesetzt - Anzeige einmal aktualisieren,
+        // bevor der Takt für den Schlaf heruntergefahren wird, dann schlafen.
+        displayShowLed(ledGetPercent(), ledGetWatts());
+
+        // Warten, bis der Taster wirklich losgelassen (entprellt) ist - sonst könnte eine
+        // Prell-Flanke beim Loslassen die MCU sofort wieder aufwecken.
+        while (encoderIsButtonPressed()) {
+        }
+
+        sleepThenWakeOn();
     }
 
-    // Vorwarnstufe: LED auf reduzierte Helligkeit dimmen statt hart abschalten.
-    static bool batteryLowWarning = false;
-    if (!batteryLowWarning && batteryVoltageSmoothed < BATTERY_LOW_WARNING_VOLTAGE) {
-        batteryLowWarning = true;
-    } else if (batteryLowWarning && batteryVoltageSmoothed > BATTERY_LOW_WARNING_RECOVER_VOLTAGE) {
-        batteryLowWarning = false;
-    }
-
-    // TODO: gewünschte Helligkeit wird später vom Inkrementalgeber kommen - bis dahin fest 0.
-    uint8_t desiredLedPercent = 0;
-    uint8_t ledPercent = desiredLedPercent;
-    if (batteryUndervoltageLockout) {
-        ledPercent = 0;
-    } else if (batteryLowWarning) {
-        ledPercent = min(ledPercent, (uint8_t)BATTERY_LOW_WARNING_LED_PERCENT);
-    }
-    analogWrite(PIN_LED_PWM, (uint16_t)ledPercent * 255 / 100);
-
-    // Feste Breite (Leerzeichen-gepolstert), damit bei wechselnder Ziffernanzahl (z.B.
-    // 9.87 -> 10.12) keine Reste des alten Texts stehen bleiben.
-    char line[16];
-    snprintf(line, sizeof(line), "Akku: %5.2fV", batteryVoltageSmoothed);
-    tft.setCursor(0, 0);
-    tft.print(line);
-
-    tft.setCursor(0, 16);
-    if (batteryUndervoltageLockout) {
-        tft.setTextColor(TFT_RED, TFT_BLACK);
-        tft.print("AKKU LEER!    ");
-        tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    } else if (batteryLowWarning) {
-        tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-        tft.print("AKKU SCHWACH  ");
-        tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    } else {
-        tft.print("              ");
-    }
+    displayShowBattery(batteryGetVoltageSmoothed(), batteryGetChargePercent(),
+                        batteryGetLedCeilingPercent() < 100);
+    displayShowTemperature(temperatureGetHeatsinkC(), temperatureGetLedCeilingPercent() < 100);
+    displayShowLed(ledGetPercent(), ledGetWatts());
+    displayShowFan(fanGetPercent());
 }
