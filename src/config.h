@@ -56,12 +56,9 @@
 #define LED_THROTTLE_START_C 65.0f
 #define LED_THROTTLE_ZERO_C 80.0f
 
-// Akkuspannung über Spannungsteiler - nachgemessen: B0 (ADC1_IN8). Teiler ist einstellbar
-// (Trimmer), auf ~3,0V Pin-Spannung bei max. Akkuspannung (~22V) ausgelegt für volle
-// ADC-Auflösung. Fein-kalibriert gegen Multimeter (nach vollem EMA-Einschwingen, ~30-40s):
-// Anzeige 20,00V vs. gemessen 20,179V -> Korrektur 20,179/20,00 = 1,00895
-// -> Faktor 7,83 * 1,00895 = 7,90.
-// Bei erneutem Verstellen des Trimmers muss dieser Faktor neu kalibriert werden.
+// Akkuspannung über Spannungsteiler (Trimmer einstellbar) - siehe README für Pin/ADC-Kanal,
+// Sicherheitshinweise zur Dimensionierung und den Kalibrierablauf. Wert unten nur der
+// Fallback-Vorgabe für settings.cpp, siehe dort.
 #define PIN_BATTERY_ADC PB0
 #define BATTERY_VOLTAGE_DIVIDER_RATIO 7.90f
 

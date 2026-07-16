@@ -2,6 +2,10 @@
 
 Firmware für eine selbstgebaute 100W-LED-Taschenlampe auf Basis eines STM32 "Bluepill"
 (STM32F103C8), betrieben am 20V/40V-Akkusystem eines Ferrex-Werkzeugs (Aldi-Eigenmarke).
+Der Ferrex-Akku war schlicht der bei diesem Aufbau verfügbare - die Firmware ist über den
+Konfigurationsbildschirm (siehe unten) so anpassbar, dass grundsätzlich auch andere
+Werkzeugakku-Plattformen mit ähnlicher Li-Ion-Zellenzahl/Spannungslage funktionieren
+sollten, sofern der Spannungsteiler entsprechend dimensioniert wird.
 
 Die Hardware war bereits fertig verdrahtet, die ursprünglichen Projektdateien sind aber
 verloren gegangen - dieses Repo ist der Neuaufbau der Firmware bei bereits bestehender
@@ -20,12 +24,30 @@ Verkabelung.
   PWM-Duty-Cycle der Konstantstromquelle
 - **Bedienung:** Inkrementalgeber mit Taster (KY-040-artiges Modul)
 - **Stromversorgung:** Ferrex 20V/40V-Akkupack (im 20V/5S-Modus betrieben, ~15-21V),
-  Spannungsmessung über einstellbaren 10kΩ-Spannungsteiler an einem ADC-Pin
+  Spannungsmessung über einstellbaren 10kΩ-Spannungsteiler an B0 (ADC1_IN8) - Sicherheits-
+  und Kalibrierhinweise siehe ADC-Faktor im Konfigurationsbildschirm unten
 
 ### Pinbelegung
 
-Siehe [`src/config.h`](src/config.h) für die vollständige, kommentierte Zuordnung
-(TFT, Lüfter-PWM, LED-PWM, Akkuspannungs-ADC, DS18B20, Inkrementalgeber - alle vermessen).
+Alle Pins sind vermessen, Details/Begründung siehe Kommentare in
+[`src/config.h`](src/config.h).
+
+| Funktion | Pin | Anmerkung |
+| --- | --- | --- |
+| TFT SCLK | PA5 | SPI1 |
+| TFT MOSI | PA7 | SPI1 |
+| TFT CS | PA4 | |
+| TFT DC | PB11 | |
+| TFT RST | PB10 | |
+| TFT Backlight | PB1 | TIM3_CH4 |
+| Lüfter-MOSFET PWM | PA8 | TIM1_CH1 |
+| LED-MOSFET PWM | PA11 | TIM1_CH4 (gleicher Timer wie Lüfter) |
+| Akkuspannung ADC | PB0 | ADC1_IN8, über Spannungsteiler |
+| Teiler-GND (schaltbar) | PC14 | liegt auf OSC32_IN-Pad |
+| DS18B20 | PA2 | OneWire |
+| Encoder CLK | PA0 | TIM2_CH1 |
+| Encoder DT | PA1 | TIM2_CH2 |
+| Encoder Taster | PA3 | |
 
 ## Firmware
 
@@ -68,12 +90,13 @@ Compile-Time-Vorgaben für einen frisch geflashten Controller:
 - **Ladeschluss Volt** - für die Ladezustands-%-Anzeige (100% bei diesem Wert), rein
   kosmetisch, keine Schutzfunktion.
 - **ADC-Faktor** - Kalibrierfaktor des Spannungsteilers, mit Live-Vorschau der sich daraus
-  ergebenden Akkuspannung während der Bearbeitung. **Vorsicht:** Dieser Faktor kalibriert
-  nur die *Anzeige/Auswertung*, er schützt nicht den ADC-Pin selbst - bevor der
-  Spannungsteiler an ein Akkupack mit höherer Maximalspannung als die Ferrex 20V/5S-Reihe
-  (~21V) angeschlossen wird, muss der Teiler so dimensioniert (Widerstände!) und vorher
-  mit einem Multimeter gemessen werden, dass die Pinspannung am ADC bei
-  Akku-Maximalspannung sicher unter 3,3V bleibt - sonst droht eine ADC-/MCU-Überlastung.
+  ergebenden Akkuspannung während der Bearbeitung. **Vorsicht:** Die Teiler-Widerstände
+  müssen vor jeder Inbetriebnahme so dimensioniert sein, dass die Pinspannung am ADC bei
+  maximaler Akkuspannung sicher unter 3,3V bleibt (STM32F103-ADC-Referenzspannung) - sonst
+  droht eine ADC-/MCU-Überlastung. Der ADC-Faktor selbst kalibriert nur die
+  *Anzeige/Auswertung* und schützt den Pin nicht. Erst danach lässt sich der Faktor gegen
+  ein Multimeter kalibrieren - immer bei Erstinbetriebnahme und nach jedem Verstellen des
+  Trimmers nötig.
 
 ## Schutzfunktionen
 
@@ -98,10 +121,6 @@ umgesetzt: bei einem harten Schwellwert könnte die Lastabsenkung durch hohen LE
 (IR-Drop am Akku) zu einem Ein/Aus-Takten führen, sobald die Ruhespannung knapp über der
 Schwelle liegt. Die Rampe ist dagegen selbstregulierend - sinkt die Helligkeit, sinkt
 auch der Strom, die Spannung erholt sich, statt hart umzuschalten.
-
-Der Spannungsteiler-Faktor ist gegen ein Multimeter kalibriert und muss bei erneutem
-Verstellen des Trimmers neu bestimmt werden (über den Konfigurationsbildschirm, siehe
-oben - kein Neuflashen nötig).
 
 ## Lüftersteuerung
 
